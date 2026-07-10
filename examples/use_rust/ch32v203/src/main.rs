@@ -5,17 +5,17 @@
 mod macros;
 mod keymap;
 
-// use defmt::{debug, error, info, warn};
-// use defmt_rtt as _;
-#[defmt::global_logger]
-struct Logger;
+use defmt::{debug, error, info, warn};
+use defmt_rtt as _;
+// #[defmt::global_logger]
+// struct Logger;
 
-unsafe impl defmt::Logger for Logger {
-    fn acquire() {}
-    unsafe fn flush() {}
-    unsafe fn release() {}
-    unsafe fn write(_bytes: &[u8]) {}
-}
+// unsafe impl defmt::Logger for Logger {
+//     fn acquire() {}
+//     unsafe fn flush() {}
+//     unsafe fn release() {}
+//     unsafe fn write(_bytes: &[u8]) {}
+// }
 
 // use embassy_stm32::gpio::{Input, Level, Output, Speed};
 // use embassy_stm32::peripherals::USB;
@@ -67,6 +67,7 @@ bind_interrupts!(struct Irqs {
 
 #[embassy_executor::main(entry = "qingke_rt::entry")]
 async fn main(_spawner: Spawner) {
+    info!("start");
     // Initialize peripherals
     let p = hal::init(hal::Config {
         rcc: hal::rcc::Config::SYSCLK_FREQ_144MHZ_HSE,

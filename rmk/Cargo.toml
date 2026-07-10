@@ -155,7 +155,6 @@ defmt = [
     "embassy-futures/defmt",
     "usbd-hid/defmt",
     "sequential-storage/defmt",
-    "embassy-nrf?/defmt",
     "postcard/use-defmt",
     "trouble-host?/defmt",
     "bt-hci?/defmt",

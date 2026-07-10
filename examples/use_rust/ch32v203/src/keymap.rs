@@ -8,9 +8,9 @@ pub(crate) const NUM_LAYER: usize = 1;
 pub const fn get_default_keymap() -> [[[KeyAction; COL]; ROW]; NUM_LAYER] {
     [
         layer!([
-            [k!(AudioVolUp), k!(B), k!(AudioVolDown)],
-            [k!(AudioVolUp), k!(B), k!(AudioVolDown)],
-            [k!(AudioVolUp), k!(B), k!(AudioVolDown)],
+            [k!(A), k!(B), k!(C)],
+            [k!(D), k!(E), k!(F)],
+            [k!(G), k!(H), k!(I)],
             [k!(AudioVolUp), k!(B), k!(AudioVolDown)]
         ]),
     ]
