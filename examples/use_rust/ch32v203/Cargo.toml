@@ -49,6 +49,7 @@ bench = false
 [profile.dev]  # this will NOT fit in flash!
 codegen-units = 1      # better optimizations
 debug = true
+strip = false
 opt-level = "z"
 overflow-checks = true
 lto = "fat"
@@ -56,6 +57,7 @@ lto = "fat"
 [profile.release]
 codegen-units = 1       # better optimizations
 debug = true            # no overhead for bare-metal
+strip = false
 opt-level = "z"         # optimize for binary size
 overflow-checks = false
 lto = "fat"
