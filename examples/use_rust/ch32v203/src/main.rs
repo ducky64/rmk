@@ -35,7 +35,6 @@ use rmk::config::{BehaviorConfig, PositionalConfig, RmkConfig};
 use rmk::debounce::default_debouncer::DefaultDebouncer;
 use rmk::keyboard::Keyboard;
 use rmk::matrix::Matrix;
-use rmk::processor::builtin::wpm::WpmProcessor;
 use rmk::usb::UsbTransport;
 use rmk::{KeymapData, initialize_keymap, run_all};
 
@@ -68,8 +67,6 @@ bind_interrupts!(struct Irqs {
 
 #[embassy_executor::main(entry = "qingke_rt::entry")]
 async fn main(_spawner: Spawner) {
-    // info!("main start");
-
     // Initialize peripherals
     let p = hal::init(hal::Config {
         rcc: hal::rcc::Config::SYSCLK_FREQ_144MHZ_HSI,
@@ -78,12 +75,10 @@ async fn main(_spawner: Spawner) {
 
     // Usb driver
     let driver = Driver::new(p.USBD, Irqs, p.PA12, p.PA11);
-    // info!("usb driver created");
 
     // Pin config
     let (row_pins, col_pins) =
         config_matrix_pins_ch32v!(peripherals: p, input: [PA10, PA9, PA7, PA5], output: [PA8, PA6, PA4]);
-    // info!("matrix created");
 
     // Keyboard config
     let rmk_config = RmkConfig { ..Default::default() };
@@ -93,7 +88,6 @@ async fn main(_spawner: Spawner) {
     let mut behavior_config = BehaviorConfig::default();
     let per_key_config = PositionalConfig::default();
     let keymap = initialize_keymap(&mut keymap_data, &mut behavior_config, &per_key_config).await;
-    // info!("keymap init'd");
 
     // Initialize the matrix + keyboard
     let debouncer = DefaultDebouncer::new();
@@ -101,10 +95,7 @@ async fn main(_spawner: Spawner) {
     let mut keyboard = Keyboard::new(&keymap);
 
     let mut usb_transport = UsbTransport::new(driver, rmk_config.device_config);
-    let mut wpm_processor = WpmProcessor::new();
-
-    // info!("init done");
 
     // Start
-    run_all!(matrix, usb_transport, wpm_processor, keyboard).await;
+    run_all!(matrix, usb_transport, keyboard).await;
 }
