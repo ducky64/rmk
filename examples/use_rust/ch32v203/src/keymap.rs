@@ -1,5 +1,5 @@
 use rmk::types::action::KeyAction;
-use rmk::{a, k, layer, mo};
+use rmk::{a, k, layer};
 pub(crate) const COL: usize = 3;
 pub(crate) const ROW: usize = 4;
 pub(crate) const NUM_LAYER: usize = 1;

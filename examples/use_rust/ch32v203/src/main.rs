@@ -69,10 +69,9 @@ bind_interrupts!(struct Irqs {
 async fn main(_spawner: Spawner) {
     // Initialize peripherals
     let p = hal::init(hal::Config {
-        rcc: hal::rcc::Config::SYSCLK_FREQ_144MHZ_HSI,
+        rcc: hal::rcc::Config::SYSCLK_FREQ_144MHZ_HSE,
         ..Default::default()
     });
-
     // Usb driver
     let driver = Driver::new(p.USBD, Irqs, p.PA12, p.PA11);
 

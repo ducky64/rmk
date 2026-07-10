@@ -27,7 +27,6 @@ use crate::hid::{KeyboardReport, Report};
 use crate::keyboard::combo::Combo;
 use crate::keyboard::fork::ActiveFork;
 use crate::keyboard::held_buffer::{HeldBuffer, HeldKey, KeyState};
-use crate::keyboard::mouse::{MouseAction, MouseState};
 use crate::keyboard::oneshot::OneShotState;
 use crate::keyboard_macros::MacroOperation;
 use crate::keymap::KeyMap;
@@ -40,7 +39,6 @@ pub mod combo;
 pub(crate) mod fork;
 pub(crate) mod held_buffer;
 pub(crate) mod morse;
-pub(crate) mod mouse;
 pub(crate) mod oneshot;
 #[cfg(feature = "steno")]
 pub(crate) mod steno;
@@ -154,19 +152,7 @@ impl Runnable for Keyboard<'_> {
                 self.process_buffered_key(key).await
             } else {
                 // If mouse repeat is pending, race subscriber against deadline
-                let event = if let Some(deadline) = self.mouse.next_deadline() {
-                    match with_deadline(deadline, self.keyboard_event_subscriber.next_message_pure()).await {
-                        Ok(event) => event,
-                        Err(_) => {
-                            // Repeat deadline expired, fire repeat
-                            self.fire_mouse_repeat().await;
-                            continue;
-                        }
-                    }
-                } else {
-                    // No repeat pending, wait indefinitely
-                    self.keyboard_event_subscriber.next_message_pure().await
-                };
+                let event = self.keyboard_event_subscriber.next_message_pure().await;
                 self.process_inner(event).await
             };
         }
@@ -231,9 +217,6 @@ pub struct Keyboard<'a> {
     /// This is still needed besides `held_keycodes` because multiple keys with same keycode can be registered.
     registered_keys: [Option<KeyboardEvent>; 6],
 
-    /// Mouse state (report, acceleration, repeat counters, repeat deadlines)
-    mouse: MouseState,
-
     /// Internal media report buf
     media_report: MediaKeyboardReport,
 
@@ -271,7 +254,6 @@ impl<'a> Keyboard<'a> {
             registered_keys: [None; 6],
             held_modifiers: ModifierCombination::default(),
             held_keycodes: [HidKeyCode::No; 6],
-            mouse: MouseState::new(),
             media_report: MediaKeyboardReport { usage_id: 0 },
             system_control_report: SystemControlReport { usage_id: 0 },
             last_key_code: KeyCode::Hid(HidKeyCode::No),
@@ -330,20 +312,6 @@ impl<'a> Keyboard<'a> {
                         // Timeout, dispatch combo
                         debug!("[Combo] Timeout, dispatch combo");
                         self.dispatch_combos(&key.action, key.event).await;
-                    }
-                }
-            }
-            KeyState::Pressed(_) | KeyState::Released(_) | KeyState::EarlyFired(_) if key.action.is_morse() => {
-                // Wait for timeout or new key event
-                info!("Waiting morse key: {:?}", key.action);
-                match with_deadline(key.timeout_time, self.keyboard_event_subscriber.next_message_pure()).await {
-                    Ok(event) => {
-                        debug!("Buffered morse key interrupted by a new key event: {:?}", event);
-                        self.process_inner(event).await;
-                    }
-                    Err(_timeout) => {
-                        debug!("Buffered morse key timeout");
-                        self.handle_morse_timeout(&key).await;
                     }
                 }
             }
@@ -414,11 +382,7 @@ impl<'a> Keyboard<'a> {
             }
             KeyBehaviorDecision::Buffer => {
                 debug!("Current key is buffered");
-                let timeout_time = if key_action.is_morse() {
-                    event_time + Self::morse_timeout(self.keymap, key_action, true)
-                } else {
-                    event_time
-                };
+                let timeout_time = event_time;
                 self.held_buffer.push(HeldKey::new(
                     event,
                     *key_action,
@@ -708,93 +672,6 @@ impl<'a> Keyboard<'a> {
                     let _ = decisions.push((held_key.event.pos, HeldKeyDecision::Normal));
                     continue;
                 }
-
-                // The remaining keys are not same as the current key, check only morse keys
-                if held_key.event.pos != event.pos && held_key.action.is_morse() {
-                    let mode = Self::tap_hold_mode(self.keymap, &held_key.action);
-
-                    if event.pressed {
-                        // The current key is being pressed
-
-                        if decision_for_current_key == KeyBehaviorDecision::FlowTap
-                            && matches!(held_key.state, KeyState::Pressed(_))
-                            && Self::is_flow_tap_enabled(self.keymap, &held_key.action)
-                        {
-                            debug!("Flow tap triggered, resolve buffered morse key as tapping");
-                            // If flow tap of current key is triggered, tapping all held keys
-                            let _ = decisions.push((held_key.event.pos, HeldKeyDecision::FlowTap));
-                            continue;
-                        }
-
-                        // Check morse key mode
-                        match mode {
-                            MorseMode::PermissiveHold => {
-                                // Permissive hold mode checks key releases, so push current key press into buffer.
-                                decision_for_current_key = KeyBehaviorDecision::Buffer;
-                            }
-                            MorseMode::HoldOnOtherPress => {
-                                debug!(
-                                    "Trigger morse key due to hold on other key press: {:?}",
-                                    held_key.action
-                                );
-                                let _ = decisions.push((held_key.event.pos, HeldKeyDecision::HoldOnOtherKeyPress));
-                                decision_for_current_key = KeyBehaviorDecision::CleanBuffer;
-                            }
-                            MorseMode::Normal => {
-                                // Normal mode: resolve a same-hand HRM as tap on press when
-                                // unilateral_tap is enabled, so the roll fires in the correct
-                                // order (HRM tap first, then the new key).
-                                let unilateral_tap = Self::is_unilateral_tap_enabled(self.keymap, &held_key.action);
-                                if unilateral_tap
-                                    && matches!(held_key.state, KeyState::Pressed(_))
-                                    && let KeyboardEventPos::Key(pos1) = held_key.event.pos
-                                    && let KeyboardEventPos::Key(pos2) = event.pos
-                                {
-                                    let hand1 = self.keymap.hand_at(pos1.row as usize, pos1.col as usize);
-                                    let hand2 = self.keymap.hand_at(pos2.row as usize, pos2.col as usize);
-                                    if hand1.is_same_side(hand2) {
-                                        debug!(
-                                            "Unilateral tap on press (Normal mode): resolving HRM as tap for correct roll order"
-                                        );
-                                        let _ = decisions.push((held_key.event.pos, HeldKeyDecision::UnilateralTap));
-                                        decision_for_current_key = KeyBehaviorDecision::CleanBuffer;
-                                        continue;
-                                    }
-                                }
-                            }
-                        }
-                    } else {
-                        let unilateral_tap = Self::is_unilateral_tap_enabled(self.keymap, &held_key.action);
-
-                        // 1. Check unilateral tap of held key
-                        // Note: `decision for current key == Release` means that current held key is pressed AFTER the current releasing key,
-                        // releasing a key should not trigger unilateral tap of keys which are pressed AFTER the released key
-                        if unilateral_tap
-                            && event.pos != held_key.event.pos
-                            && decision_for_current_key != KeyBehaviorDecision::Release
-                            && let KeyboardEventPos::Key(pos1) = held_key.event.pos
-                            && let KeyboardEventPos::Key(pos2) = event.pos
-                        {
-                            let hand1 = self.keymap.hand_at(pos1.row as usize, pos1.col as usize);
-                            let hand2 = self.keymap.hand_at(pos2.row as usize, pos2.col as usize);
-
-                            if hand1.is_same_side(hand2) {
-                                debug!("Unilateral tap triggered, resolve morse key as tapping");
-                                let _ = decisions.push((held_key.event.pos, HeldKeyDecision::UnilateralTap));
-                                continue;
-                            }
-                        }
-
-                        // The current key is being released, check only the held key in permissive hold mode
-                        if decision_for_current_key != KeyBehaviorDecision::Release && mode == MorseMode::PermissiveHold
-                        {
-                            debug!("Permissive hold!");
-                            // Check first current releasing key is in the buffer, AND after the current key
-                            let _ = decisions.push((held_key.event.pos, HeldKeyDecision::PermissiveHold));
-                            decision_for_current_key = KeyBehaviorDecision::CleanBuffer;
-                        }
-                    }
-                }
             }
         }
         (decision_for_current_key, decisions)
@@ -827,8 +704,6 @@ impl<'a> Keyboard<'a> {
                 KeyAction::Tap(action) => self.process_key_action_tap(action, event).await,
                 _ => unreachable!(),
             }
-        } else {
-            self.process_key_action_morse(&key_action, event, event_time).await;
         }
         self.try_finish_forks(original_key_action, event);
     }
@@ -863,7 +738,7 @@ impl<'a> Keyboard<'a> {
             // "explicit modifiers" includes the effect of one-shot modifiers, held modifiers keys only
             modifiers: self.resolve_explicit_modifiers(event.pressed),
             leds: LedIndicator::from_bits(LOCK_LED_STATES.load(core::sync::atomic::Ordering::Relaxed)),
-            mouse: MouseButtons::from_bits(self.mouse.report.buttons),
+            mouse: MouseButtons::new_from(false, false, false, false, false, false, false, false),
         };
 
         let fork_states = &self.fork_states;
@@ -1548,8 +1423,6 @@ impl<'a> Keyboard<'a> {
                     self.process_action_consumer_control(consumer, event).await
                 } else if let Some(system_control) = hid_keycode.process_as_system_control() {
                     self.process_action_system_control(system_control, event).await
-                } else if hid_keycode.is_mouse_key() {
-                    self.process_action_mouse(hid_keycode, event).await;
                 } else {
                     // Basic keycodes
                     self.process_hid_keycode(hid_keycode, event).await
@@ -1593,36 +1466,6 @@ impl<'a> Keyboard<'a> {
         } else {
             self.system_control_report.usage_id = 0;
             self.send_system_control_report().await;
-        }
-    }
-
-    /// Process mouse key action with acceleration support.
-    async fn process_action_mouse(&mut self, key: HidKeyCode, event: KeyboardEvent) {
-        let action = {
-            let config = self.keymap.mouse_key_config();
-            self.mouse.process(key, event.pressed, &config)
-        };
-
-        // Sync button state to keymap for conditional layer / fork consumers
-        self.keymap.set_mouse_buttons(self.mouse.report.buttons);
-
-        if let MouseAction::SendReport = action {
-            self.send_mouse_report().await;
-        }
-    }
-
-    /// Fire pending mouse repeats: recalculate movement with acceleration,
-    /// send the report, and schedule the next repeat.
-    async fn fire_mouse_repeat(&mut self) {
-        let report = {
-            let config = self.keymap.mouse_key_config();
-            self.mouse.fire_repeats(&config)
-        };
-
-        if let Some(report) = report {
-            self.keymap.set_mouse_buttons(self.mouse.report.buttons);
-            self.send_report(Report::MouseReport(report)).await;
-            yield_now().await;
         }
     }
 
@@ -1794,13 +1637,6 @@ impl<'a> Keyboard<'a> {
     pub(crate) async fn send_media_report(&mut self) {
         self.send_report(Report::MediaKeyboardReport(self.media_report)).await;
         self.media_report.usage_id = 0;
-        yield_now().await;
-    }
-
-    /// Send mouse report. Rate is implicitly bounded by the repeat interval
-    /// for movement/wheel, but button events are sent immediately.
-    pub(crate) async fn send_mouse_report(&mut self) {
-        self.send_report(Report::MouseReport(self.mouse.get_report())).await;
         yield_now().await;
     }
 
