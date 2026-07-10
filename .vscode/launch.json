@@ -32,7 +32,7 @@
                         {
                             "channelNumber": 0,
                             // Format RTT data as String data
-                            "dataFormat": "String",
+                            "dataFormat": "Defmt",
                             // Include host-side timestamps for every line of data transferred from the target RTT output
                             "showTimestamps": true
                         },
