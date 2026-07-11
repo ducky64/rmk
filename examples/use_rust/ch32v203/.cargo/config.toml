@@ -13,7 +13,6 @@ DEFMT_LOG="info"
 rustflags = [
   "-C", "link-arg=-Tlink.x",
   "-C", "link-arg=-Tdefmt.x",
-  "-Zunstable-options", "-Cpanic=immediate-abort",  # requires nightly, cargo +nightly run
 ]
 # runner = "riscv64-unknown-elf-gdb -q -x openocd.gdb"
 # runner = "riscv-none-embed-gdb -q -x openocd.gdb"
