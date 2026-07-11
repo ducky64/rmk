@@ -7,7 +7,7 @@
 target = "riscv32imc-unknown-none-elf"
 
 [env]
-DEFMT_LOG="info"
+DEFMT_LOG="debug"
 
 [target."riscv32imc-unknown-none-elf"]
 rustflags = [
