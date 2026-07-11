@@ -22,15 +22,28 @@ use defmt_rtt as _;
 // use embassy_stm32::usb::{Driver, InterruptHandler};
 // use embassy_stm32::{Config, bind_interrupts};
 
+use core::panic::PanicInfo;
+#[panic_handler]
+fn panic(info: &PanicInfo) -> ! {
+    // This will print the panic message, file, and line number via defmt!
+    defmt::error!("{}", defmt::Display2Format(info));
+
+    // Halt the CPU
+    loop {
+        core::hint::spin_loop();
+    }
+}
+
 use ch32_hal as hal;
 use hal::gpio::{Input, Level, Output, Speed};
 use hal::usbd::Driver;
 use hal::{Config, bind_interrupts};
 
+// use panic_halt as _;
+
 use embassy_executor::Spawner;
 use embassy_time::Timer;
 use keymap::{COL, ROW};
-use panic_halt as _;
 use rmk::config::{BehaviorConfig, PositionalConfig, RmkConfig};
 use rmk::debounce::default_debouncer::DefaultDebouncer;
 use rmk::keyboard::Keyboard;
@@ -66,13 +79,17 @@ bind_interrupts!(struct Irqs {
 });
 
 #[embassy_executor::main(entry = "qingke_rt::entry")]
-async fn main(_spawner: Spawner) {
+async fn main(spawner: Spawner) {
     info!("start");
     // Initialize peripherals
     let p = hal::init(hal::Config {
         rcc: hal::rcc::Config::SYSCLK_FREQ_144MHZ_HSE,
         ..Default::default()
     });
+
+    let mut led = Output::new(p.PB4, Level::Low, Speed::High);
+    spawner.spawn(led_task(led).expect("led task"));
+
     // Usb driver
     let driver = Driver::new(p.USBD, Irqs, p.PA12, p.PA11);
 
@@ -98,4 +115,16 @@ async fn main(_spawner: Spawner) {
 
     // Start
     run_all!(matrix, usb_transport, keyboard).await;
+}
+
+#[embassy_executor::task]
+async fn led_task(mut led: Output<'static>) {
+    info!("LED task start");
+
+    loop {
+        led.set_high();
+        Timer::after_millis(250).await;
+        led.set_low();
+        Timer::after_millis(250).await;
+    }
 }

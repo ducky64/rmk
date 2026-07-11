@@ -1,10 +1,12 @@
 /* CH32V203G8 */
 MEMORY
 {
-	FLASH : ORIGIN = 0x00000000, LENGTH = 64k
+	/* FLASH : ORIGIN = 0x00000000, LENGTH = 64k */
+	/* No way RMK, esp with any debugging, fits in 64K, so this overflows into non-zero-wait flash at the cost of performance */
+	FLASH : ORIGIN = 0x00000000, LENGTH = 192k
 	RAM : ORIGIN = 0x20000000, LENGTH = 10k
 	/* Non Zero Wait Flash, 224K - 32K = 192K */
-	FLASH1 : ORIGIN = 0x00010000, LENGTH = 16K
+	FLASH1 : ORIGIN = 0x00030000, LENGTH = 10K
 }
 
 SECTIONS
