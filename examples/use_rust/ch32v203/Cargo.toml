@@ -20,13 +20,13 @@ ch32-hal = { git = "https://github.com/ch32-rs/ch32-hal.git", features = [
     "time-driver-tim2",
 ], default-features = false }
 qingke-rt = "0.7"
-# qingke = { version = "0.7", features = ["critical-section-impl"] }
-qingke = { version = "0.7", default-features = false }
 # qingke = "0.7"
+# qingke = { version = "0.7", features = ["critical-section-impl"] }
+qingke = { git = "https://github.com/ch32-rs/qingke.git" }
 
-riscv = { version = "0.15.0", features = ["critical-section-single-hart"] }
+# riscv = { version = "0.16", features = ["critical-section-single-hart"] }
 
-critical-section = "1.0"
+critical-section = "1.2"
 embassy-executor = { version = "0.10", features = [
     # "platform-spin",
     "platform-riscv32",
